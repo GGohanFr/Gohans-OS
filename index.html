@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full w-full overflow-hidden select-none">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dallas ISD</title>
+    <link rel="shortcut icon" href="assets/favicon.ico" type="image/x-icon">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            font-family: 'Inter', sans-serif;
+            box-sizing: border-box;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.4);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        .glass-panel {
+            background: rgba(18, 18, 18, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .glass-dock {
+            background: rgba(10, 10, 10, 0.65);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+        }
+
+        .app-window {
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+            transform: translateY(100vh);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .app-window.active {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .dock-item {
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s ease;
+        }
+
+        .dock-item:hover {
+            transform: translateY(-8px) scale(1.15);
+        }
+
+        .chatgpt-logo {
+            filter: drop-shadow(0 0 8px rgba(255,255,255,0.3));
+        }
+
+        .desktop-tile {
+            touch-action: none;
+            user-select: none;
+        }
+
+        .panic-overlay {
+            z-index: 999999 !important;
+        }
+    </style>
+</head>
+<body class="bg-black text-white h-full w-full overflow-hidden relative select-none">
+
+    <div id="wallpaper-container" class="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat transition-all duration-500">
+        <canvas id="particle-canvas" class="absolute inset-0 w-full h-full z-0 opacity-60 pointer-events-auto"></canvas>
+    </div>
+
+    <header class="absolute top-0 left-0 right-0 h-9 glass-panel z-40 flex items-center justify-between px-4 text-xs font-mono tracking-wide border-b border-white/10">
+        <div class="flex items-center space-x-3">
+            <span class="flex items-center space-x-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span class="font-semibold text-white/90">Gohan's OS</span>
+            </span>
+            <span class="text-white/30">|</span>
+            <span id="system-status" class="text-white/60">Life is hard but im harder. Many things dont work right now since its a beta version</span>
+        </div>
+        <div class="flex items-center space-x-4">
+            <div id="panic-indicator" class="px-2 py-0.5 rounded bg-white/10 border border-white/20 text-white/70 text-[10px] flex items-center space-x-1 cursor-pointer hover:bg-white/20" title="Panic Key (~)">
+                <i id="panic-shield-icon" class="fa-solid fa-shield-halved text-emerald-400"></i>
+                <span>PANIC: [ ~ ]</span>
+            </div>
+
+            <!-- MUSIC PLAYER WIDGET -->
+            <div class="relative flex items-center space-x-2">
+                <button onclick="toggleMusicWidget()" class="px-2 py-0.5 rounded bg-white/10 border border-white/20 text-white/80 hover:bg-white/20 flex items-center space-x-1 text-[10px]">
+                    <i class="fa-solid fa-music text-purple-400"></i>
+                    <span id="now-playing-label" class="max-w-[80px] truncate">Music</span>
+                </button>
+
+                <!-- Hidden Audio Element -->
+                <audio id="audio-player" ontimeupdate="updateMusicProgress()" onended="nextSong()"></audio>
+
+                <!-- Music Dropdown Popover -->
+                <div id="music-popover" class="hidden absolute top-8 right-0 w-64 glass-panel border border-white/20 rounded-xl p-3 z-50 flex flex-col space-y-3 shadow-2xl">
+                    <div class="flex items-center justify-between border-b border-white/10 pb-2">
+                        <span class="text-xs font-semibold text-white/90 flex items-center space-x-1">
+                            <i class="fa-solid fa-headphones text-purple-400"></i>
+                            <span>Audio Player</span>
+                        </span>
+                        <button onclick="toggleMusicWidget()" class="text-white/60 hover:text-white text-xs">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+
+                    <!-- Song Selection List -->
+                    <div class="flex flex-col space-y-1">
+                        <div class="text-[10px] text-white/40 tracking-wider font-bold">SELECT SONG</div>
+                        <div id="song-list" class="flex flex-col space-y-1">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Controls & Timestamp -->
+                    <div class="flex flex-col space-y-2 pt-1 border-t border-white/10">
+                        <div class="flex items-center justify-between text-[10px] text-white/70 font-mono">
+                            <span id="music-current-time">0:00</span>
+                            <span id="music-duration">0:00</span>
+                        </div>
+                        <input type="range" id="music-seekbar" min="0" value="0" step="0.1" oninput="seekMusic(this.value)" class="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-purple-400">
+                        
+                        <div class="flex items-center justify-center space-x-4 pt-1">
+                            <button onclick="playPauseMusic()" class="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center">
+                                <i id="music-play-btn" class="fa-solid fa-play text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="live-clock" class="text-white/90 font-bold">00:00:00 AM</div>
+        </div>
+    </header>
+
+    <main id="desktop-grid" class="absolute inset-0 top-9 bottom-24 p-6 z-10 flex flex-wrap content-start gap-6 overflow-y-auto pointer-events-auto">
+        <!-- Pinned game tiles render dynamically here -->
+    </main>
+
+    <nav id="app-dock-nav" class="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 transition-opacity duration-300">
+        <div class="glass-dock px-4 py-2.5 rounded-2xl flex items-center space-x-3">
+            <button onclick="openApp('games')" class="dock-item group relative p-3 rounded-xl bg-white/5 hover:bg-white/20 border border-white/10 flex flex-col items-center justify-center">
+                <i class="fa-solid fa-gamepad text-xl text-white"></i>
+                <span class="absolute -top-10 px-2 py-1 rounded bg-black/90 border border-white/20 text-[10px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap">Games</span>
+            </button>
+
+            <button onclick="openApp('proxy')" class="dock-item group relative p-3 rounded-xl bg-white/5 hover:bg-white/20 border border-white/10 flex flex-col items-center justify-center">
+                <i class="fa-solid fa-globe text-xl text-white"></i>
+                <span class="absolute -top-10 px-2 py-1 rounded bg-black/90 border border-white/20 text-[10px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap">Proxy</span>
+            </button>
+
+            <button onclick="openApp('movies')" class="dock-item group relative p-3 rounded-xl bg-white/5 hover:bg-white/20 border border-white/10 flex flex-col items-center justify-center">
+                <i class="fa-solid fa-video text-xl text-white"></i>
+                <span class="absolute -top-10 px-2 py-1 rounded bg-black/90 border border-white/20 text-[10px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap">Movies</span>
+            </button>
+
+            <button onclick="openApp('claude')" class="dock-item group relative p-2.5 rounded-xl bg-white/5 hover:bg-white/20 border border-white/10 flex flex-col items-center justify-center">
+                <svg class="w-6 h-6 text-white chatgpt-logo" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0813 4.779-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.5045 4.5045 0 0 1-4.4952 4.4953zm-9.5601-4.2011a4.4827 4.4827 0 0 1-.5355-3.0076l.142.0837 4.779 2.7582a.7948.7948 0 0 0 .7855 0l5.8344-3.3688v2.3371a.071.071 0 0 1-.038.0617l-4.8361 2.7915a4.5045 4.5045 0 0 1-6.1313-1.6558zm-1.03-9.7618a4.4755 4.4755 0 0 1 2.3409-1.9668l-.0024.1626v5.5164a.7948.7948 0 0 0 .3927.6813l5.8344 3.3688-2.02 1.1686a.071.071 0 0 1-.071 0l-4.8361-2.7915a4.5045 4.5045 0 0 1-1.6385-6.1394zm15.7788 3.5358l-5.8344-3.3688 2.02-1.1686a.071.071 0 0 1 .071 0l4.8361 2.7915a4.5045 4.5045 0 0 1-.7025 8.1062v-5.68a.7948.7948 0 0 0-.3902-.6803zm2.5714-3.0028a4.4827 4.4827 0 0 1 .5355 3.0076l-.142-.0837-4.779-2.7582a.7948.7948 0 0 0-.7855 0l-5.8344 3.3688v-2.3371a.071.071 0 0 1 .038-.0617l4.8361-2.7915a4.5045 4.5045 0 0 1 6.1313 1.6558zM12 14.8623l-2.4827-1.4334 2.4827-1.4334 2.4827 1.4334zm-1.3093-6.1969a4.4755 4.4755 0 0 1 2.8764 1.0408l-.1419.0813-4.779 2.7582a.7948.7948 0 0 0-.3927.6813v6.7369l-2.02-1.1686a.071.071 0 0 1-.038-.052v-5.5826a4.5045 4.5045 0 0 1 4.4952-4.4953z"/>
+                </svg>
+                <span class="absolute -top-10 px-2 py-1 rounded bg-black/90 border border-white/20 text-[10px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap">Claude AI</span>
+            </button>
+
+            <button onclick="openApp('chat')" class="dock-item group relative p-3 rounded-xl bg-white/5 hover:bg-white/20 border border-white/10 flex flex-col items-center justify-center">
+                <i class="fa-solid fa-comments text-xl text-white"></i>
+                <span class="absolute -top-10 px-2 py-1 rounded bg-black/90 border border-white/20 text-[10px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap">Chat</span>
+            </button>
+
+            <div class="w-[1px] h-8 bg-white/20 mx-1"></div>
+
+            <button onclick="openSettings()" class="dock-item group relative p-3 rounded-xl bg-white/5 hover:bg-white/20 border border-white/10 flex flex-col items-center justify-center">
+                <i class="fa-solid fa-gear text-xl text-white"></i>
+                <span class="absolute -top-10 px-2 py-1 rounded bg-black/90 border border-white/20 text-[10px] text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap">Settings</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- GAMES APP WINDOW -->
+    <div id="app-games" class="app-window fixed inset-0 top-9 bottom-0 z-30 bg-black/90 flex flex-col border-t border-white/10 backdrop-blur-xl">
+        <div id="games-hub-view" class="flex-1 flex flex-col overflow-hidden">
+            <div class="h-12 border-b border-white/10 flex items-center justify-between px-6 bg-black/50 shrink-0">
+                <div class="flex items-center space-x-3">
+                    <i class="fa-solid fa-gamepad text-white/70"></i>
+                    <span class="text-sm font-semibold tracking-wider text-white">Gohan's Tutoring</span>
+                </div>
+                <button onclick="closeApp('games')" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/30 text-white flex items-center justify-center transition-colors">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="p-6 flex-1 overflow-y-auto flex flex-col space-y-6">
+                <div class="relative w-full max-w-xl mx-auto">
+                    <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-white/40"></i>
+                    <input type="text" id="game-search" oninput="filterGames()" placeholder="Search from 100+ games..." class="w-full bg-white/5 border border-white/15 rounded-xl py-3 pl-11 pr-4 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/50 transition-colors">
+                </div>
+                <div id="games-grid" class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
+                </div>
+            </div>
+        </div>
+
+        <div id="game-player-view" class="hidden flex-1 flex-col overflow-hidden bg-black">
+            <div class="h-12 border-b border-white/10 flex items-center justify-between px-4 bg-black/80 shrink-0">
+                <div class="flex items-center space-x-3">
+                    <button onclick="exitGamePlayer()" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-semibold text-white flex items-center space-x-1.5 transition-colors">
+                        <i class="fa-solid fa-arrow-left"></i>
+                        <span>Exit Game</span>
+                    </button>
+                    <span id="active-game-title" class="text-sm font-bold text-white tracking-wide">Game Title</span>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <button id="player-pin-btn" onclick="pinActiveGame()" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-xs text-white flex items-center space-x-1.5 transition-colors">
+                        <i class="fa-solid fa-thumbtack"></i>
+                        <span>Pin</span>
+                    </button>
+                    <button onclick="refreshGameFrame()" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-xs text-white flex items-center space-x-1.5 transition-colors">
+                        <i class="fa-solid fa-rotate-right"></i>
+                        <span>Refresh</span>
+                    </button>
+                    <button onclick="fullscreenGameFrame()" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-xs text-white flex items-center space-x-1.5 transition-colors">
+                        <i class="fa-solid fa-expand"></i>
+                        <span>Fullscreen</span>
+                    </button>
+                    <button onclick="closeApp('games')" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/30 text-white flex items-center justify-center transition-colors ml-2">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 w-full h-full bg-black relative">
+                <iframe id="game-player-iframe" src="about:blank" class="w-full h-full border-none" allow="autoplay; gamepad; fullscreen; pointer-lock; accelerometer; gyroscope" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <!-- PROXY APP WINDOW -->
+    <div id="app-proxy" class="app-window fixed inset-0 top-9 bottom-0 z-30 bg-black/90 flex flex-col border-t border-white/10 backdrop-blur-xl">
+        <div class="h-12 border-b border-white/10 flex items-center justify-between px-4 bg-black/50">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-globe text-white/70"></i>
+                <span class="text-xs font-semibold tracking-wider text-white shrink-0">Gustavo Proxy</span>
+                <button onclick="reloadProxy()" class="p-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white" title="Reload">
+                    <i class="fa-solid fa-rotate-right text-xs"></i>
+                </button>
+                <button onclick="openProxyInNewTab()" class="p-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white" title="Open in New Tab">
+                    <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+                </button>
+            </div>
+            <button onclick="closeApp('proxy')" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/30 text-white flex items-center justify-center transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="flex-1 w-full h-full bg-black relative">
+            <iframe id="iframe-proxy" src="https://s3.amazonaws.com/cleverlearning/study" class="w-full h-full border-none" allow="autoplay; gamepad; fullscreen; pointer-lock; accelerometer; gyroscope" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>
+        </div>
+    </div>
+
+    <div id="app-movies" class="app-window fixed inset-0 top-9 bottom-0 z-30 bg-black/90 flex flex-col border-t border-white/10 backdrop-blur-xl">
+        <div class="h-12 border-b border-white/10 flex items-center justify-between px-6 bg-black/50">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-video text-white/70"></i>
+                <span class="text-sm font-semibold tracking-wider text-white">Absolute Cinema</span>
+            </div>
+            <button onclick="closeApp('movies')" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/30 text-white flex items-center justify-center transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="p-6 flex-1 overflow-y-auto flex flex-col space-y-6">
+            <div class="relative w-full max-w-xl mx-auto">
+                <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-white/40"></i>
+                <input type="text" id="movie-search" oninput="filterMovies()" placeholder="Search available movies and streams..." class="w-full bg-white/5 border border-white/15 rounded-xl py-3 pl-11 pr-4 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/50 transition-colors">
+            </div>
+            <div id="movies-grid" class="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-6">
+            </div>
+        </div>
+    </div>
+
+    <!-- CLAUDE APP WINDOW -->
+    <div id="app-claude" class="app-window fixed inset-0 top-9 bottom-0 z-30 bg-black/90 flex flex-col border-t border-white/10 backdrop-blur-xl">
+        <div class="h-12 border-b border-white/10 flex items-center justify-between px-6 bg-black/50">
+            <div class="flex items-center space-x-3">
+                <svg class="w-5 h-5 text-white chatgpt-logo" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0813 4.779-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.5045 4.5045 0 0 1-4.4952 4.4953zm-9.5601-4.2011a4.4827 4.4827 0 0 1-.5355-3.0076l.142.0837 4.779 2.7582a.7948.7948 0 0 0 .7855 0l5.8344-3.3688v2.3371a.071.071 0 0 1-.038.0617l-4.8361 2.7915a4.5045 4.5045 0 0 1-6.1313-1.6558zm-1.03-9.7618a4.4755 4.4755 0 0 1 2.3409-1.9668l-.0024.1626v5.5164a.7948.7948 0 0 0 .3927.6813l5.8344 3.3688-2.02 1.1686a.071.071 0 0 1-.071 0l-4.8361-2.7915a4.5045 4.5045 0 0 1-1.6385-6.1394zm15.7788 3.5358l-5.8344-3.3688 2.02-1.1686a.071.071 0 0 1 .071 0l4.8361 2.7915a4.5045 4.5045 0 0 1-.7025 8.1062v-5.68a.7948.7948 0 0 0-.3902-.6803zm2.5714-3.0028a4.4827 4.4827 0 0 1 .5355 3.0076l-.142-.0837-4.779-2.7582a.7948.7948 0 0 0-.7855 0l-5.8344 3.3688v-2.3371a.071.071 0 0 1 .038-.0617l4.8361-2.7915a4.5045 4.5045 0 0 1 6.1313 1.6558zM12 14.8623l-2.4827-1.4334 2.4827-1.4334 2.4827 1.4334zm-1.3093-6.1969a4.4755 4.4755 0 0 1 2.8764 1.0408l-.1419.0813-4.779 2.7582a.7948.7948 0 0 0-.3927.6813v6.7369l-2.02-1.1686a.071.071 0 0 1-.038-.052v-5.5826a4.5045 4.5045 0 0 1 4.4952-4.4953z"/>
+                </svg>
+                <span class="text-sm font-semibold tracking-wider text-white">CLAUDE Opus 5.5</span>
+            </div>
+            <button onclick="closeApp('claude')" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/30 text-white flex items-center justify-center transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="flex-1 w-full h-full bg-black">
+            <iframe id="iframe-claude" src="https://opus.gptchatly.com/" class="w-full h-full border-none" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+        </div>
+    </div>
+
+    <div id="app-chat" class="app-window fixed inset-0 top-9 bottom-0 z-30 bg-black/90 flex flex-col border-t border-white/10 backdrop-blur-xl">
+        <div class="h-12 border-b border-white/10 flex items-center justify-between px-6 bg-black/50">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-comments text-white/70"></i>
+                <span class="text-sm font-semibold tracking-wider text-white">COMMUNITY CHAT</span>
+            </div>
+            <button onclick="closeApp('chat')" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/30 text-white flex items-center justify-center transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="flex-1 w-full h-full bg-black">
+            <iframe id="iframe-chat" src="https://organizations.minnit.chat/971559877090126/c/Oblivion?embed" class="w-full h-full border-none" allow="geolocation; microphone; camera"></iframe>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="w-full max-w-lg glass-panel rounded-2xl border border-white/20 p-6 flex flex-col space-y-6 relative shadow-2xl">
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <div class="flex items-center space-x-3">
+                    <i class="fa-solid fa-sliders text-white"></i>
+                    <h2 class="text-base font-bold tracking-wider text-white">SYSTEM SETTINGS</h2>
+                </div>
+                <button onclick="closeSettings()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/30 text-white flex items-center justify-center transition-colors">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+                <div class="flex items-center justify-between p-3.5 bg-white/5 rounded-xl border border-white/10">
+                    <div>
+                        <div class="text-sm font-medium text-white">Panic Mode Hotkey</div>
+                        <div class="text-xs text-white/50">Toggle `~` key instant screen mask</div>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="panic-toggle" class="sr-only peer" checked onchange="togglePanicModeSetting(this.checked)">
+                        <div class="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white/80"></div>
+                    </label>
+                </div>
+
+                <div class="p-3.5 bg-white/5 rounded-xl border border-white/10 space-y-2">
+                    <div class="text-sm font-medium text-white">Custom Wallpaper</div>
+                    <div class="flex items-center space-x-3">
+                        <input type="file" id="wallpaper-upload" accept="image/*" class="hidden" onchange="handleWallpaperUpload(event)">
+                        <button onclick="document.getElementById('wallpaper-upload').click()" class="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-xs font-medium text-white transition-colors flex items-center space-x-2">
+                            <i class="fa-solid fa-upload"></i>
+                            <span>Upload Image</span>
+                        </button>
+                        <button onclick="resetWallpaper()" class="px-4 py-2 bg-white/5 hover:bg-white/15 border border-white/10 rounded-lg text-xs font-medium text-white/70 transition-colors">
+                            Reset Default
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-3.5 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between">
+                    <div>
+                        <div class="text-sm font-medium text-white">Reset Local Data</div>
+                        <div class="text-xs text-white/50">Clear pinned apps, wallpaper & cached preferences</div>
+                    </div>
+                    <button onclick="promptResetData()" class="px-3 py-2 bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 rounded-lg text-xs font-semibold text-red-200 transition-colors">
+                        Clear All
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Non-Blocking Reset Modal -->
+    <div id="confirm-reset-modal" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="glass-panel p-6 rounded-2xl max-w-sm w-full space-y-4 border border-red-500/30 text-center">
+            <i class="fa-solid fa-triangle-exclamation text-3xl text-red-400"></i>
+            <h3 class="text-base font-bold text-white">Reset System Data?</h3>
+            <p class="text-xs text-white/60">This will remove all pinned desktop shortcuts, wallpaper settings, and preferences.</p>
+            <div class="flex items-center justify-center space-x-3 pt-2">
+                <button onclick="hideResetPrompt()" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-white transition-colors">Cancel</button>
+                <button onclick="executeClearSystemData()" class="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-xs font-semibold text-white transition-colors">Confirm Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="panic-overlay" class="panic-overlay fixed inset-0 bg-black hidden pointer-events-auto">
+        <img src="assets/panic.jpeg" onerror="this.src='https://placehold.co/1920x1080/000000/ffffff?text=SYSTEM+OFFLINE'" class="w-full h-full object-cover">
+    </div>
+
+    <script>
+        const musicList = [
+            { id: 1, title: "Song 1", src: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" },
+            { id: 2, title: "Song 2", src: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3" },
+            { id: 3, title: "Song 3", src: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3" },
+            { id: 4, title: "Song 4", src: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3" }
+        ];
+
+        let currentSongIndex = 0;
+
+        function renderMusicList() {
+            const listContainer = document.getElementById('song-list');
+            listContainer.innerHTML = '';
+            musicList.forEach((song, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between transition-colors ${idx === currentSongIndex ? 'bg-purple-600/40 text-white font-semibold' : 'hover:bg-white/10 text-white/70'}`;
+                btn.onclick = () => selectSong(idx);
+                btn.innerHTML = `
+                    <span class="truncate">${song.title}</span>${idx === currentSongIndex ? '<i class="fa-solid fa-volume-high text-[10px] text-purple-400"></i>' : ''}
+                `;
+                listContainer.appendChild(btn);
+            });
+        }
+
+        function toggleMusicWidget() {
+            const popover = document.getElementById('music-popover');
+            popover.classList.toggle('hidden');
+        }
+
+        function selectSong(index) {
+            currentSongIndex = index;
+            const audio = document.getElementById('audio-player');
+            const song = musicList[currentSongIndex];
+            audio.src = song.src;
+            document.getElementById('now-playing-label').innerText = song.title;
+            renderMusicList();
+            audio.play();
+            document.getElementById('music-play-btn').className = "fa-solid fa-pause text-xs";
+        }
+
+        function playPauseMusic() {
+            const audio = document.getElementById('audio-player');
+            const playBtn = document.getElementById('music-play-btn');
+            
+            if (!audio.src) {
+                selectSong(0);
+                return;
+            }
+
+            if (audio.paused) {
+                audio.play();
+                playBtn.className = "fa-solid fa-pause text-xs";
+            } else {
+                audio.pause();
+                playBtn.className = "fa-solid fa-play text-xs";
+            }
+        }
+
+        function nextSong() {
+            currentSongIndex = (currentSongIndex + 1) % musicList.length;
+            selectSong(currentSongIndex);
+        }
+
+        function updateMusicProgress() {
+            const audio = document.getElementById('audio-player');
+            const seekbar = document.getElementById('music-seekbar');
+            const currentTimeEl = document.getElementById('music-current-time');
+            const durationEl = document.getElementById('music-duration');
+
+            if (audio.duration) {
+                seekbar.max = audio.duration;
+                seekbar.value = audio.currentTime;
+                currentTimeEl.innerText = formatTime(audio.currentTime);
+                durationEl.innerText = formatTime(audio.duration);
+            }
+        }
+
+        function seekMusic(val) {
+            const audio = document.getElementById('audio-player');
+            audio.currentTime = val;
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+
+        // 100 Games Database Slots
+        const gameTitles = [
+            "Slope", "1v1.LOL", "Retro Bowl", "Subway Surfers", "Geometry Dash",
+            "BitLife", "Drive Mad", "Basket Random", "Moto X3M", "Cookie Clicker",
+            "Chess.com", "Pac-Man", "Flappy Bird", "Snake", "2048",
+            "Paper.io 2", "Aargh.io", "Slither.io", "Agar.io", "Shell Shockers",
+            "Zombs Royale", "Venge.io", "Smash Karts", "Tunnel Rush", "Crossy Road",
+            "Run 3", "Drift Hunters", "Happy Wheels", "Superhot", "Getaway Shootout",
+            "Rooftop Snipers", "Soccer Random", "Volley Random", "Boxing Random", "Watermelon Game",
+            "Cut the Rope", "Plants vs Zombies", "Temple Run 2", "Stickman Hook", "Idle Breakout",
+            "Bloons TD 4", "Bloons TD 5", "Fireboy & Watergirl", "Papa's Pizzeria", "Papa's Burgeria",
+            "Papa's Freezeria", "Doodle Jump", "Angry Birds", "Sonic the Hedgehog", "Super Mario Bros",
+            "Minecraft Classic", "Doom Web", "Wolfenstein 3D", "Tetris", "Minesweeper",
+            "Solitaire", "Sudoku", "Wordle", "Tomb Runner", "Crossy Road Space"
+        ];
+
+        const gamesDatabase = Array.from({ length: 100 }, (_, i) => {
+            const name = gameTitles[i] || `Game Slot ${i + 1}`;
+            return {
+                id: i + 1,
+                name: name,
+                url: `https://example.com/game${i + 1}`,
+                thumb: `https://placehold.co/300x200/111111/ffffff?text=${encodeURIComponent(name)}`
+            };
+        });
+
+        // 10 Movies Database Slots
+        const movieTitles = [
+            "Inception", "Interstellar", "The Dark Knight", "The Matrix", "Cyberpunk Stories",
+            "Avatar", "Gladiator", "Pulp Fiction", "Fight Club", "Forrest Gump"
+        ];
+
+        const moviesDatabase = Array.from({ length: 10 }, (_, i) => {
+            const title = movieTitles[i] || `Movie Slot ${i + 1}`;
+            return {
+                id: i + 1,
+                title: title,
+                url: "https://www.youtube.com/embed/YoHD9XEInc0",
+                thumb: `https://placehold.co/320x180/111111/ffffff?text=${encodeURIComponent(title)}`
+            };
+        });
+
+        let pinnedGameIds = JSON.parse(localStorage.getItem('mono_pinned_games') || '[]');
+        let panicModeEnabled = localStorage.getItem('mono_panic_enabled') !== 'false';
+        let isPanicActive = false;
+        let activeGameObj = null;
+
+        function updateClock() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            document.getElementById('live-clock').innerText = timeStr;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function openApp(appId) {
+            const target = document.getElementById(`app-${appId}`);
+            if (target) {
+                target.classList.add('active');
+                document.getElementById('app-dock-nav').classList.add('hidden');
+            }
+        }
+
+        function closeApp(appId) {
+            const target = document.getElementById(`app-${appId}`);
+            if (target) {
+                target.classList.remove('active');
+                document.getElementById('app-dock-nav').classList.remove('hidden');
+                if (appId === 'games') {
+                    exitGamePlayer();
+                }
+            }
+        }
+
+        function openSettings() {
+            document.getElementById('settings-modal').classList.remove('hidden');
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function renderGames(list = gamesDatabase) {
+            const grid = document.getElementById('games-grid');
+            grid.innerHTML = '';
+            list.forEach(game => {
+                const isPinned = pinnedGameIds.includes(game.id);
+                const card = document.createElement('div');
+                card.className = "bg-white/5 border border-white/10 rounded-2xl overflow-hidden hover:border-white/30 transition-all flex flex-col justify-between group cursor-pointer hover:scale-[1.02] duration-200";
+                
+                card.onclick = (e) => {
+                    if (!e.target.closest('button')) {
+                        launchGame(game);
+                    }
+                };
+
+                card.innerHTML = `
+                    <div class="relative h-40 bg-black/40 overflow-hidden">
+                        <img src="${game.thumb}" onerror="this.src='https://placehold.co/300x200/111111/ffffff?text=${encodeURIComponent(game.name)}'" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                        <div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <span class="px-3 py-1.5 rounded-xl bg-white text-black text-xs font-bold shadow-lg flex items-center space-x-1">
+                                <i class="fa-solid fa-play text-[10px]"></i>
+                                <span>Play Now</span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="p-4 flex items-center justify-between">
+                        <div>
+                            <h3 class="font-semibold text-sm text-white truncate max-w-[150px]">${game.name}</h3>
+                            <p class="text-[11px] text-white/50">HTML5 Web Game</p>
+                        </div>
+                        <button onclick="togglePinGame(${game.id})" class="px-3 py-1.5 rounded-lg text-xs font-medium border ${isPinned ? 'bg-white text-black border-white' : 'bg-white/10 text-white border-white/20 hover:bg-white/20'} transition-colors">
+                            <i class="fa-solid ${isPinned ? 'fa-check' : 'fa-thumbtack'} mr-1"></i>
+                            ${isPinned ? 'Pinned' : 'Pin'}
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function filterGames() {
+            const q = document.getElementById('game-search').value.toLowerCase();
+            const filtered = gamesDatabase.filter(g => g.name.toLowerCase().includes(q));
+            renderGames(filtered);
+        }
+
+        function launchGame(game) {
+            activeGameObj = game;
+            document.getElementById('active-game-title').innerText = game.name;
+            let targetUrl = game.url;
+            if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+                targetUrl = 'https://' + targetUrl;
+            }
+            document.getElementById('game-player-iframe').src = targetUrl;
+            
+            document.getElementById('games-hub-view').classList.add('hidden');
+            const playerView = document.getElementById('game-player-view');
+            playerView.classList.remove('hidden');
+            playerView.classList.add('flex');
+
+            updatePlayerPinButtonState();
+            openApp('games');
+        }
+
+        function exitGamePlayer() {
+            document.getElementById('game-player-iframe').src = "about:blank";
+            const playerView = document.getElementById('game-player-view');
+            playerView.classList.add('hidden');
+            playerView.classList.remove('flex');
+            document.getElementById('games-hub-view').classList.remove('hidden');
+            activeGameObj = null;
+        }
+
+        function pinActiveGame() {
+            if (!activeGameObj) return;
+            togglePinGame(activeGameObj.id);
+            updatePlayerPinButtonState();
+        }
+
+        function updatePlayerPinButtonState() {
+            if (!activeGameObj) return;
+            const isPinned = pinnedGameIds.includes(activeGameObj.id);
+            const pinBtn = document.getElementById('player-pin-btn');
+            if (isPinned) {
+                pinBtn.className = "px-3 py-1.5 rounded-lg bg-white text-black border border-white text-xs font-semibold flex items-center space-x-1.5 transition-colors";
+                pinBtn.innerHTML = `<i class="fa-solid fa-check"></i><span>Pinned</span>`;
+            } else {
+                pinBtn.className = "px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-xs text-white flex items-center space-x-1.5 transition-colors";
+                pinBtn.innerHTML = `<i class="fa-solid fa-thumbtack"></i><span>Pin</span>`;
+            }
+        }
+
+        function refreshGameFrame() {
+            const iframe = document.getElementById('game-player-iframe');
+            if (iframe && iframe.src) {
+                iframe.src = iframe.src;
+            }
+        }
+
+        function fullscreenGameFrame() {
+            const iframe = document.getElementById('game-player-iframe');
+            if (iframe.requestFullscreen) {
+                iframe.requestFullscreen();
+            } else if (iframe.webkitRequestFullscreen) {
+                iframe.webkitRequestFullscreen();
+            } else if (iframe.msRequestFullscreen) {
+                iframe.msRequestFullscreen();
+            }
+        }
+
+        function togglePinGame(id) {
+            if (pinnedGameIds.includes(id)) {
+                pinnedGameIds = pinnedGameIds.filter(gId => gId !== id);
+            } else {
+                pinnedGameIds.push(id);
+            }
+            localStorage.setItem('mono_pinned_games', JSON.stringify(pinnedGameIds));
+            renderGames();
+            renderDesktopShortcuts();
+        }
+
+        function renderDesktopShortcuts() {
+            const grid = document.getElementById('desktop-grid');
+            grid.innerHTML = '';
+            
+            pinnedGameIds.forEach(id => {
+                const game = gamesDatabase.find(g => g.id === id);
+                if (!game) return;
+
+                const tile = document.createElement('div');
+                tile.className = "desktop-tile relative w-32 h-32 glass-panel rounded-2xl border border-white/20 p-2 flex flex-col items-center justify-between cursor-pointer group hover:border-white/50 shadow-xl transition-shadow";
+                
+                tile.innerHTML = `
+                    <button onclick="event.stopPropagation(); togglePinGame(${game.id});" class="absolute top-1.5 right-1.5 z-20 w-6 h-6 rounded-full bg-black/80 hover:bg-red-600 border border-white/20 text-white flex items-center justify-center transition-colors">
+                        <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                    <div class="w-full h-20 rounded-xl overflow-hidden bg-black/50" onclick="launchGameFromDesktop(${game.id})">
+                        <img src="${game.thumb}" onerror="this.src='https://placehold.co/100x100/111111/ffffff?text=GAME'" class="w-full h-full object-cover">
+                    </div>
+                    <span class="text-[11px] font-medium text-white/90 truncate w-full text-center px-1" onclick="launchGameFromDesktop(${game.id})">${game.name}</span>
+                `;
+
+                makeDraggable(tile);
+                grid.appendChild(tile);
+            });
+        }
+
+        function launchGameFromDesktop(id) {
+            const game = gamesDatabase.find(g => g.id === id);
+            if (game) {
+                launchGame(game);
+            }
+        }
+
+        function reloadProxy() {
+            const iframe = document.getElementById('iframe-proxy');
+            if (iframe.src) iframe.src = iframe.src;
+        }
+
+        function openProxyInNewTab() {
+            const url = document.getElementById('iframe-proxy').src;
+            if (url && url !== 'about:blank') {
+                window.open(url, '_blank');
+            }
+        }
+
+        function makeDraggable(element) {
+            let posX = 0, posY = 0, mouseX = 0, mouseY = 0;
+            element.onmousedown = dragMouseDown;
+
+            function dragMouseDown(e) {
+                if (e.target.closest('button')) return;
+                e.preventDefault();
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = elementDrag;
+                element.style.position = 'absolute';
+                element.style.zIndex = '25';
+            }
+
+            function elementDrag(e) {
+                e.preventDefault();
+                posX = mouseX - e.clientX;
+                posY = mouseY - e.clientY;
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+                element.style.top = (element.offsetTop - posY) + "px";
+                element.style.left = (element.offsetLeft - posX) + "px";
+            }
+
+            function closeDragElement() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        }
+
+        function renderMovies(list = moviesDatabase) {
+            const grid = document.getElementById('movies-grid');
+            grid.innerHTML = '';
+            list.forEach(m => {
+                const card = document.createElement('div');
+                card.className = "bg-white/5 border border-white/10 rounded-2xl overflow-hidden p-4 flex flex-col space-y-3";
+                card.innerHTML = `
+                    <div class="relative w-full h-48 bg-black rounded-xl overflow-hidden border border-white/10">
+                        <iframe src="${m.url}" class="w-full h-full border-none" allowfullscreen></iframe>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-sm text-white truncate max-w-[200px]">${m.title}</h3>
+                        <span class="text-[10px] px-2 py-0.5 rounded bg-white/10 border border-white/20 text-white/70">HD</span>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function filterMovies() {
+            const q = document.getElementById('movie-search').value.toLowerCase();
+            const filtered = moviesDatabase.filter(m => m.title.toLowerCase().includes(q));
+            renderMovies(filtered);
+        }
+
+        function updatePanicUI() {
+            const shieldIcon = document.getElementById('panic-shield-icon');
+            if (shieldIcon) {
+                if (panicModeEnabled) {
+                    shieldIcon.className = "fa-solid fa-shield-halved text-emerald-400";
+                } else {
+                    shieldIcon.className = "fa-solid fa-shield-halved text-red-500";
+                }
+            }
+        }
+
+        function togglePanicModeSetting(enabled) {
+            panicModeEnabled = enabled;
+            localStorage.setItem('mono_panic_enabled', enabled);
+            updatePanicUI();
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === '`' || e.key === '~') {
+                if (!panicModeEnabled) return;
+                e.preventDefault();
+                isPanicActive = !isPanicActive;
+                const overlay = document.getElementById('panic-overlay');
+                if (isPanicActive) {
+                    overlay.classList.remove('hidden');
+                } else {
+                    overlay.classList.add('hidden');
+                }
+            }
+        });
+
+        function handleWallpaperUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const dataUrl = e.target.result;
+                    document.getElementById('wallpaper-container').style.backgroundImage = `url('${dataUrl}')`;
+                    localStorage.setItem('mono_custom_wallpaper', dataUrl);
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function resetWallpaper() {
+            localStorage.removeItem('mono_custom_wallpaper');
+            document.getElementById('wallpaper-container').style.backgroundImage = 'none';
+        }
+
+        function loadSavedWallpaper() {
+            const saved = localStorage.getItem('mono_custom_wallpaper');
+            if (saved) {
+                document.getElementById('wallpaper-container').style.backgroundImage = `url('${saved}')`;
+            }
+        }
+
+        function promptResetData() {
+            document.getElementById('confirm-reset-modal').classList.remove('hidden');
+        }
+
+        function hideResetPrompt() {
+            document.getElementById('confirm-reset-modal').classList.add('hidden');
+        }
+
+        function executeClearSystemData() {
+            localStorage.clear();
+            location.reload();
+        }
+
+        function initParticleCanvas() {
+            const canvas = document.getElementById('particle-canvas');
+            const ctx = canvas.getContext('2d');
+            let particles = [];
+            let mouse = { x: null, y: null, radius: 120 };
+
+            function resize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            window.addEventListener('resize', resize);
+            resize();
+
+            window.addEventListener('mousemove', (e) => {
+                mouse.x = e.x;
+                mouse.y = e.y;
+            });
+
+            class Particle {
+                constructor() {
+                    this.x = Math.random() * canvas.width;
+                    this.y = Math.random() * canvas.height;
+                    this.vx = (Math.random() - 0.5) * 0.8;
+                    this.vy = (Math.random() - 0.5) * 0.8;
+                    this.radius = Math.random() * 2 + 1;
+                }
+
+                update() {
+                    this.x += this.vx;
+                    this.y += this.vy;
+
+                    if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+                    if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+
+                    if (mouse.x !== null && mouse.y !== null) {
+                        let dx = mouse.x - this.x;
+                        let dy = mouse.y - this.y;
+                        let dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist < mouse.radius) {
+                            let angle = Math.atan2(dy, dx);
+                            let force = (mouse.radius - dist) / mouse.radius;
+                            this.x -= Math.cos(angle) * force * 3;
+                            this.y -= Math.sin(angle) * force * 3;
+                        }
+                    }
+                }
+
+                draw() {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                    ctx.fill();
+                }
+            }
+
+            function init() {
+                particles = [];
+                const count = Math.floor((canvas.width * canvas.height) / 12000);
+                for (let i = 0; i < count; i++) {
+                    particles.push(new Particle());
+                }
+            }
+
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                for (let i = 0; i < particles.length; i++) {
+                    particles[i].update();
+                    particles[i].draw();
+
+                    for (let j = i + 1; j < particles.length; j++) {
+                        let dx = particles[i].x - particles[j].x;
+                        let dy = particles[i].y - particles[j].y;
+                        let dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist < 100) {
+                            ctx.beginPath();
+                            ctx.moveTo(particles[i].x, particles[i].y);
+                            ctx.lineTo(particles[j].x, particles[j].y);
+                            ctx.strokeStyle = `rgba(255, 255, 255, ${0.15 - dist / 700})`;
+                            ctx.lineWidth = 0.5;
+                            ctx.stroke();
+                        }
+                    }
+                }
+                requestAnimationFrame(animate);
+            }
+
+            init();
+            animate();
+        }
+
+        window.onload = function() {
+            renderGames();
+            renderMovies();
+            renderDesktopShortcuts();
+            loadSavedWallpaper();
+            initParticleCanvas();
+            renderMusicList();
+            document.getElementById('panic-toggle').checked = panicModeEnabled;
+            updatePanicUI();
+        };
+    </script>
+</body>
+</html>
